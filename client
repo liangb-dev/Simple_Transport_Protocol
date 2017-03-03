@@ -1,0 +1,122 @@
+#!/usr/bin/env python
+
+import socket
+import struct
+
+
+"""
+function: my_network()
+arg: NUID (string)
+return: address
+"""
+def my_network(NUID):
+    myID = str(NUID) # cast to string
+    address = "10." + myID[2:5] + "." + myID[5:7] + "." + myID[7:9]
+    return address
+
+
+"""
+function: my_ethernet()
+arg: NUID (string)
+return: address
+"""
+def my_ethernet(NUID):
+    myeth = list("020"+str(NUID))
+    myeth = '-'.join([i+j for i,j in zip(myeth[::2], myeth[1::2])])
+    return myeth
+     
+
+
+# The server will have IP address 10.0.0.1  
+# and ethernet address 02:00:00:00:00:01
+
+"""
+function: make_ARP()
+arg: none
+return: 
+"""
+def make_ARP(): 
+    dst_eth = '020000000001'
+    src_eth = my_ethernet('001107800').replace("-","")
+    eth_type = '0806'
+    hw_type = '00010800'
+    hw_addr = '00060004'
+    op = '0002'
+    send_eth = src_eth
+    send_IP = my_network('0011077800').replace(".","")
+    targ_eth = '020000000001'
+    targ_IP = '0a000000'
+    padding = '00'*8
+
+    arp = dst_eth + src_eth + eth_type + hw_type + hw_addr + op 
+    arp += send_eth + send_IP + targ_eth + targ_IP + padding
+
+    return arp 
+
+
+"""
+function: make_pkt()
+arg:
+return:
+"""
+def make_pkt():
+    data = 'GET / HTTP/1.0\r\n\r\n'
+    src_port = '10' # arbitrary?
+    dst_port = '80'
+    src_IP = '' # "as above?"
+    dst_IP = '' # "as above?"
+    #"ethernet addresses as above"?
+    flags = 'SYN'
+    window = '1400'
+    seq_num = 1
+    ack_num = 0
+    pkt_id = 2
+
+#TODO: finish setting up the packet
+
+"""
+function: send()
+description: Packet sent over TCP to 'login-faculty.ccs.neu.edu' port 5025. 
+            Packets encapsulated using length field 
+"""
+def send(s):
+    pkt = '\1' * 60 # sample packet with bogus addresses and ethertype
+    s.connect(('login-faculty.ccs.neu.edu', 5025))
+    s.send(struct.pack('!H', len(pkt)) + pkt, 0)
+
+
+
+"""
+function: recv()
+description:
+"""
+def recv(s):
+    tmp = s.recv(2, 0)
+    n = struct.unpack('!H', tmp)[0] # unpack returns a list
+    pkt = ''
+    while len(pkt) < n:
+        pkt += s.recv(n-len(pkt), 0)
+    print pkt
+
+    # TODO:
+    # 1. while-loop until receive the FIN flag
+    # 2. ACK the FIN flag
+    # 3. wait for final ACK
+    # 4. exit()
+
+"""
+function: main()
+
+"""
+def main():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    
+    #send(s)
+    #recv(s)
+
+    print make_ARP() 
+"""
+
+"""
+if __name__ == "__main__":
+        main()

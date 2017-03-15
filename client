@@ -78,9 +78,8 @@ def make_pkt():
 """
 class: ip_pkt
 """
-class ip_pkt:
+class tcp_pkt:
     def __init__(self):
-        self.data = 'GET / HTTP/1.0\r\n\r\n'
         self.src_port = '10'
         self.dst_port = '80'
         self.src_IP = ''
@@ -90,6 +89,14 @@ class ip_pkt:
         self.seq_num = 1
         self.ack_num = 0
         self.pkt_id = 2
+        self.checksum = ""#TODO:
+        self.data = "" #'GET / HTTP/1.0\r\n\r\n'
+
+class ip_pkt:
+    def __init__(self):
+        #TODO: IP headers 
+        self.data = tcp_pkt() #TODO:
+        
 
 
 """
@@ -111,11 +118,13 @@ function: send()
 description: Packet sent over TCP to 'login-faculty.ccs.neu.edu' port 5025. 
             Packets encapsulated using length field 
 """
-def send(s):
+def send(s, fp):
     
     pkt = make_ARP() #'\1' * 60 # sample packet with bogus addresses and ethertype
     s.connect(('login-faculty.ccs.neu.edu', 5025))
     s.send(struct.pack('!H', len(pkt)) + pkt, 0)
+    phdr = struct.pack("IIII", 0, 0, len(pkt), len(pkt))
+    fp.write(phdr+pkt)
     print "...packet sent."
 
 
@@ -123,14 +132,17 @@ def send(s):
 function: recv()
 description:
 """
-def recv(s):
+def recv(s, fp):
     tmp = s.recv(2, 0)
     n = struct.unpack('!H', tmp)[0] # unpack returns a list
     pkt = ''
     print "receiving packets..."
     while len(pkt) < n:
         pkt += s.recv(n-len(pkt), 0)
-    print "ARP response length: " + len(pkt)
+    phdr = struct.pack("IIII", 0, 0, len(pkt), len(pkt))
+    fp.write(phdr + pkt)
+    
+    print "ARP response length: " + str(len(pkt))
     print binascii.hexlify(pkt)
 
     # TODO:
@@ -146,12 +158,24 @@ function: main()
 
 """
 def main():
+    
+
+    fp = open("log.pcap", "w")
+    fhdr = struct.pack("IHHIIII", 0xa1b2c3d4, 2, 4, 0, 0, 65536, 1)
+    fp.write(fhdr)
+
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
-    send(s)
-    recv(s)
+    send(s, fp)
+    recv(s, fp)
     
     #print make_ARP() 
+
+    s.close()
+
+    #TODO: Create TCP connection with SOCK.RAW, SOCK.IPROTO_RAW
+    #TODO: Create IP packet by wrapping a TCP packet
+    #TODO: Create functions to increment values in IP packet
 """
 
 """

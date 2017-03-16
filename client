@@ -12,7 +12,7 @@ return: address
 def my_network(NUID):
     myID = str(NUID) # cast to string
     address = "10." + myID[2:5] + "." + myID[5:7] + "." + myID[7:9]
-    return address
+    return " ".join(map(lambda x: "0x{:02x}".format(int(x)).replace('0x',''), address.split('.')))
 
 
 """
@@ -22,13 +22,9 @@ return: address
 """
 def my_ethernet(NUID):
     myeth = list("020"+str(NUID))
-    myeth = '-'.join([i+j for i,j in zip(myeth[::2], myeth[1::2])])
+    myeth = ' '.join([i+j for i,j in zip(myeth[::2], myeth[1::2])])
     return myeth
      
-
-
-# The server will have IP address 10.0.0.1  
-# and ethernet address 02:00:00:00:00:01
 
 """
 function: make_ARP()
@@ -36,25 +32,71 @@ arg: none
 return: 
 """
 def make_ARP():
-     
-    dst_eth = 'ff ff ff ff ff ff'#'02 00 00 00 00 01/'
-    src_eth = '02 00 01 10 78 00/'#my_ethernet('001107800').replace("-","") + "/"
+    ID = '001107800' 
+    
+    dst_eth = 'ff ff ff ff ff ff/'
+    src_eth = my_ethernet(ID) + "/"
     eth_type = '08 06/'
     hw_type = '00 01 08 00/'
     hw_addr = '06 04/'
     op = '00 01/'
-    send_eth = src_eth #+ "/"
-    send_IP = '0a 6e 78 00'#my_network('001107800').replace(".","") +"/"
+    send_eth = my_ethernet(ID) + "/"
+    send_IP = my_network(ID) + "/"
     targ_eth = '00 00 00 00 00 00/' 
     targ_IP = '0a 00 00 01/'
     padding = '00'*16 + "/"
 
     arp = dst_eth + src_eth + eth_type + hw_type + hw_addr + op 
     arp += send_eth + send_IP + targ_eth + targ_IP + padding
-
+    
     return arp.replace(" ","").replace("/","") 
 
 
+
+
+"""
+function: arpsend()
+args: s, fp
+description: ARP sent over TCP to 'login-faculty.ccs.neu.edu' port 5025. 
+            ARP encapsulated using length field 
+"""
+def arpsend(s, fp):
+    print "Making ARP packet..."
+    pkt = make_ARP() #'\1' * 60 # sample packet with bogus addresses and ethertype
+    print pkt
+    pkt = binascii.unhexlify(pkt)
+    print len(pkt)
+    print "Sending ARP packet..."
+    s.send(struct.pack('!H', len(pkt)) + pkt, 0)
+    phdr = struct.pack("IIII", 0, 0, len(pkt), len(pkt))
+    fp.write(phdr+pkt)
+    
+    
+    
+    
+"""
+function: arprecv()
+args: s, fp
+description:
+"""
+def arprecv(s, fp):
+    print "Getting ARP response..."
+    tmp = s.recv(2,0)
+    n = struct.unpack('!H', tmp)[0] # unpack returns a list
+    print "ARP response length: " + str(n)
+    pkt = ''
+    while len(pkt) < n:
+        pkt += s.recv(n-len(pkt), 0)
+    phdr = struct.pack("IIII", 0, 0, len(pkt), len(pkt))
+    fp.write(phdr + pkt)
+    
+    
+    print "ARP response data: " 
+    print binascii.hexlify(pkt)
+    
+
+
+    
 """
 function: make_pkt()
 arg:
@@ -114,95 +156,43 @@ def ip_cksum(pkt):
     return sum ^ 0xffff
 
 
-"""
-function: send()
-description: Packet sent over TCP to 'login-faculty.ccs.neu.edu' port 5025. 
-            Packets encapsulated using length field 
-"""
-def send(s, fp):
-    #Method #1
-    """
-    pkt = make_ARP()
-    print pkt 
-    print len(pkt)
-    pkt = binascii.unhexlify(pkt)
-    hdr = struct.pack('!H',len(pkt))
-    print len(hdr)
-    s.send(hdr + pkt)
 
-    """
-    #Method #2
-    pkt = make_ARP() #'\1' * 60 # sample packet with bogus addresses and ethertype
-    pkt = binascii.unhexlify(pkt)
-    s.send(struct.pack('!H', len(pkt)) + pkt, 0)
-    phdr = struct.pack("IIII", 0, 0, len(pkt), len(pkt))
-    fp.write(phdr+pkt)
-    print "...packet sent."
-    
-    
-    
-"""
-function: recv()
-description:
-"""
-def recv(s, fp):
-    # Method 1
-    """
-    hdr = s.recv(2)
-    pktlen = struct.unpack('!H', hdr)[0]
-    print pktlen
-    recv = s.recv(pktlen)
-    print len(recv)
-    print binascii.hexlify(recv)
 
-    """
-    # Method 2
-    tmp = s.recv(2)
-    print binascii.hexlify(tmp)
-    n = struct.unpack('!H', tmp)[0] # unpack returns a list
-    pkt = ''
-    print "receiving packets..."
-    while len(pkt) < n:
-        pkt += s.recv(n-len(pkt), 0)
-    phdr = struct.pack("IIII", 0, 0, len(pkt), len(pkt))
-    fp.write(phdr + pkt)
-    
-    print "ARP response length: " + str(len(pkt))
-    print "ARP response: "
-    print binascii.hexlify(pkt)
-    
-    # TODO:
-    # 1. while-loop until receive the FIN flag
-    # 2. ACK the FIN flag
-    # 3. wait for final ACK
-    # 4. exit()
-    
-    
 
 """
 function: main()
 
 """
 def main():
-    
-
+    # File pointer for wireshark -> 'log.pcap'
     fp = open("log.pcap", "w")
     fhdr = struct.pack("IHHIIII", 0xa1b2c3d4, 2, 4, 0, 0, 65536, 1)
     fp.write(fhdr)
 
+    # TCP socket connection
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect(('login-faculty.ccs.neu.edu', 5025))    
-
-    send(s, fp)
-    recv(s, fp)
-    
+    #print my_ethernet('001107800')
+    #print my_network('001107800')
+    arpsend(s, fp)
+    arprecv(s, fp)
     s.close()
 
-    #TODO: Create TCP connection with SOCK.RAW, SOCK.IPROTO_RAW
-    #TODO: Create IP packet by wrapping a TCP packet
-    #TODO: Create functions to increment values in IP packet
-"""
+    
+    # Raw TCP socket connection
+        #TODO: Create TCP connection with SOCK.RAW, SOCK.IPROTO_RAW
+        #TODO: Create IP packet by wrapping a TCP packet
+        #TODO: Create functions to increment values in IP packet
 
-"""
+
+        
+        # TODO:
+        # 1. while-loop until receive the FIN flag
+        # 2. ACK the FIN flag
+        # 3. wait for final ACK
+        # 4. exit()
+    
+
+
 if __name__ == "__main__":
         main()

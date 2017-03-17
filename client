@@ -63,9 +63,9 @@ description: ARP sent over TCP to 'login-faculty.ccs.neu.edu' port 5025.
 def arpsend(s, fp):
     print "Making ARP packet..."
     pkt = make_ARP() #'\1' * 60 # sample packet with bogus addresses and ethertype
-    print pkt
+    #print pkt
     pkt = binascii.unhexlify(pkt)
-    print len(pkt)
+    #print len(pkt)
     print "Sending ARP packet..."
     s.send(struct.pack('!H', len(pkt)) + pkt, 0)
     phdr = struct.pack("IIII", 0, 0, len(pkt), len(pkt))
@@ -94,29 +94,7 @@ def arprecv(s, fp):
     print "ARP response data: " 
     print binascii.hexlify(pkt)
     
-
-
     
-"""
-function: make_pkt()
-arg:
-return:
-"""
-def make_pkt():
-    data = 'GET / HTTP/1.0\r\n\r\n'
-    src_port = '10' # arbitrary?
-    dst_port = '80'
-    src_IP = '' # "as above?"
-    dst_IP = '' # "as above?"
-    #"ethernet addresses as above"?
-    flags = 'SYN'
-    window = '1400'
-    seq_num = 1
-    ack_num = 0
-    pkt_id = 2
-
-#TODO: finish setting up the packet
-
 
 """
 class: ip_pkt
@@ -127,7 +105,7 @@ class tcp_pkt:
         self.dst_port = '80'
         self.src_IP = ''
         self.dst_IP = ''
-        self.flags = 'SYN'
+        self.flag = 'SYN'
         self.window = '1400'
         self.seq_num = 1
         self.ack_num = 0
@@ -135,11 +113,38 @@ class tcp_pkt:
         self.checksum = ""#TODO:
         self.data = "" #'GET / HTTP/1.0\r\n\r\n'
 
+    def update_data(self, data):
+        self.data = data
+    def update_flags(self, flag):
+        self.flag = flag
+    def update_seqnum(self, num):
+        self.seq_num = num
+    def update_acknum(self, num):
+        self.ack_num = num
+
+
 class ip_pkt:
     def __init__(self):
         #TODO: IP headers 
-        self.data = tcp_pkt() #TODO:
-        
+        self.version = ''
+        self.iphl = ''
+        self.tos = ''
+        self.len = ''
+        self.id = ''
+        self.flags = ''
+        self.offset = ''
+        self.ttl = ''
+        self.protocol = ''
+        self.checksum
+        self.src_addr = ''
+        self.dst_addr = ''
+        self.options = ''
+        self.pad = ''
+        self.data = tcp_pkt() 
+       
+    def update_checksum(self): 
+        self.checksum = ip_cksum(self)
+
 
 
 """
@@ -183,8 +188,6 @@ def main():
         #TODO: Create TCP connection with SOCK.RAW, SOCK.IPROTO_RAW
         #TODO: Create IP packet by wrapping a TCP packet
         #TODO: Create functions to increment values in IP packet
-
-
         
         # TODO:
         # 1. while-loop until receive the FIN flag

@@ -31,13 +31,13 @@ function: make_ARP()
 arg: none
 return: 
 """
-def make_ARP():
-    ID = '001107800' 
+def make_ARP(ID):
     
     dst_eth = 'ff ff ff ff ff ff/'
     src_eth = my_ethernet(ID) + "/"
     eth_type = '08 06/'
-    hw_type = '00 01 08 00/'
+    hw_type = '00 01/'
+    prot_type = '08 00/'
     hw_addr = '06 04/'
     op = '00 01/'
     send_eth = my_ethernet(ID) + "/"
@@ -46,7 +46,7 @@ def make_ARP():
     targ_IP = '0a 00 00 01/'
     padding = '00'*16 + "/"
 
-    arp = dst_eth + src_eth + eth_type + hw_type + hw_addr + op 
+    arp = dst_eth + src_eth + eth_type + hw_type + prot_type + hw_addr + op 
     arp += send_eth + send_IP + targ_eth + targ_IP + padding
     
     return arp.replace(" ","").replace("/","") 
@@ -62,7 +62,7 @@ description: ARP sent over TCP to 'login-faculty.ccs.neu.edu' port 5025.
 """
 def arpsend(s, fp):
     print "Making ARP packet..."
-    pkt = make_ARP() #'\1' * 60 # sample packet with bogus addresses and ethertype
+    pkt = make_ARP('001107800')
     #print pkt
     pkt = binascii.unhexlify(pkt)
     #print len(pkt)
@@ -97,24 +97,31 @@ def arprecv(s, fp):
     
 
 """
-class: ip_pkt
+class: tcp_hdr
+len: 20 bytes
 """
-class tcp_pkt:
+class tcp_hdr(object):
     def __init__(self):
-        self.src_port = '10'
-        self.dst_port = '80'
-        self.src_IP = ''
-        self.dst_IP = ''
-        self.flag = 'SYN'
-        self.window = '1400'
-        self.seq_num = 1
-        self.ack_num = 0
-        self.pkt_id = 2
-        self.checksum = ""#TODO:
-        self.data = "" #'GET / HTTP/1.0\r\n\r\n'
+        self.src_port = '00 10' #16 bits
+        self.dst_port = '00 80'#16 bits
+        self.seq = '00 00 00 00' #32 bits
+        self.ack = '00 00 00 00' #32 bits
+        self.len = '00 00' #4 bits
+        self.reserved = '' #6 bits 
 
-    def update_data(self, data):
-        self.data = data
+        self.flag = '00 00 10' #6 bits #SYN
+        self.window = '14 00' #16 bits
+        self.checksum = '00 00' #16 bits
+        self.urgent = '00 00' #16 bits
+        self.options = '' #0 or 32 bits
+        #self.data = "" #'GET / HTTP/1.0\r\n\r\n'
+
+    def get_hdr(self):
+        result = (self.src_port + self.dst_port + self.seq + self.ack + \
+                 self.len + self.reserved + self.flag + self.window + 
+                 self.checksum + self.urgent + self.options)
+        return result.replace(' ','')
+
     def update_flags(self, flag):
         self.flag = flag
     def update_seqnum(self, num):
@@ -122,33 +129,51 @@ class tcp_pkt:
     def update_acknum(self, num):
         self.ack_num = num
 
+"""
+class: ip_hdr
+len: 20 bytes
+"""
+class ip_hdr(object):
+    def __init__(self): 
+        self.version = '' #4 bits
+        self.ihl = '' #4 bits
+        self.tos = '' #8 bits
+        self.len = '' #16 bits
+        self.id = ''#16 bits
+        self.flags = '' #3 bits
+        self.offset = '' #13 bits
+        self.ttl = '' #8 bits
+        self.protocol = '' #8 bits
+        self.checksum = '' #16 bits
+        self.src_addr = '' #32 bits
+        self.dst_addr = '' #32 bits
 
-class ip_pkt:
-    def __init__(self):
-        #TODO: IP headers 
-        self.version = ''
-        self.iphl = ''
-        self.tos = ''
-        self.len = ''
-        self.id = ''
-        self.flags = ''
-        self.offset = ''
-        self.ttl = ''
-        self.protocol = ''
-        self.checksum
-        self.src_addr = ''
-        self.dst_addr = ''
-        self.options = ''
-        self.pad = ''
-        self.data = tcp_pkt() 
-       
+    def get_hdr(self):
+        return self.version + self.ihl + self.tos + self.len + self.id + \
+        self.flags + self.offset + self.ttl + self.protocol + self.checksum + self.src_addr + self.dst_addr    
+
     def update_checksum(self): 
         self.checksum = ip_cksum(self)
 
 
+"""
+class: eth_hdr
+len: 14 bytes
+"""
+class eth_hdr(object):
+    def __init__(self):
+        self.preamble = '' #8 bits
+        self.dst = '' #6 bits
+        self.src = '' #6 bits
+        self.type = '' #2 bits
+    def get_hdr(self):
+        return self.preamble + self.dst + self.src + self.type
+
 
 """
 Internet checksum
+use1: ip=checksum(ipheader)
+use2: tcp=checksum(pseudoheader + tcpheader) + tcpdata?
 """
 def ip_cksum(pkt):
     if len(pkt) & 1:
@@ -181,8 +206,29 @@ def main():
     #print my_network('001107800')
     arpsend(s, fp)
     arprecv(s, fp)
-    s.close()
 
+    print ""
+    print ""
+   
+    eth_hdr0 = eth_hdr()
+    ip_hdr0 = ip_hdr()
+    tcp_hdr0 = tcp_hdr()
+    raw_pkt = eth_hdr0.get_hdr() + ip_hdr0.get_hdr() + tcp_hdr0.get_hdr()
+    pkt = binascii.unhexlify(raw_pkt)
+    pkt_len = len(pkt)
+    print eth_hdr0.get_hdr() + ip_hdr0.get_hdr() + tcp_hdr0.get_hdr()    
+
+    print "sending GET..."
+    s.send(struct.pack("!H",pkt_len) + pkt, 0)
+    print "receiving..."
+    
+    while True:
+        resp = s.recv(2)
+        if resp == "": break
+        print tmp
+        print len(tmp)
+    s.close()
+    print "\done"
     
     # Raw TCP socket connection
         #TODO: Create TCP connection with SOCK.RAW, SOCK.IPROTO_RAW

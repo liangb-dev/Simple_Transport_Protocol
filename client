@@ -144,7 +144,7 @@ class ip_hdr(object):
         self.offset = '00' #13 bits
         self.ttl = '40' #8 bits
         self.protocol = '06' #8 bits
-        self.checksum = '6c 9b' #16 bits
+        self.checksum = '18 61' #16 bits
         self.src_addr = my_network('001107800') #32 bits
         self.dst_addr = '0a 00 00 01' #32 bits
 
@@ -195,9 +195,9 @@ function: main()
 
 """
 def main():
-"""
-ARP section
-"""
+    """
+    ARP section
+    """
     # File pointer for wireshark -> 'log.pcap'
     fp = open("log.pcap", "w")
     fhdr = struct.pack("IHHIIII", 0xa1b2c3d4, 2, 4, 0, 0, 65536, 1)
@@ -215,14 +215,16 @@ ARP section
     print ""
  
 
-"""
-SYN/ACK section
-"""
+    """
+    SYN/ACK section
+    """
     # Construct headers  
     eth_hdr0 = eth_hdr()
     ip_hdr0 = ip_hdr()
     tcp_hdr0 = tcp_hdr() 
     
+    print ip_cksum(ip_hdr0.get_hdr())
+
     # Concatenate headers
     raw_pkt = eth_hdr0.get_hdr() + ip_hdr0.get_hdr() + tcp_hdr0.get_hdr()
     raw_pkt = raw_pkt.replace(' ','')
@@ -240,7 +242,7 @@ SYN/ACK section
     print "receiving..."
     
     while True:
-        resp = s.recv(56)
+        resp = s.recv(60)
         if resp == "": break
         print binascii.hexlify(resp)
         print len(resp)

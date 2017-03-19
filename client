@@ -106,12 +106,11 @@ class tcp_hdr(object):
         self.dst_port = '00 80'#16 bits
         self.seq = '00 00 00 00' #32 bits
         self.ack = '00 00 00 00' #32 bits
-        self.len = '00 00' #4 bits
+        self.len = '50' #4 bits
         self.reserved = '' #6 bits 
-
-        self.flag = '00 00 10' #6 bits #SYN
-        self.window = '14 00' #16 bits
-        self.checksum = '00 00' #16 bits
+        self.flag = '02' #6 bits #SYN
+        self.window = '05 78' #16 bits
+        self.checksum = '27 2d' #16 bits
         self.urgent = '00 00' #16 bits
         self.options = '' #0 or 32 bits
         #self.data = "" #'GET / HTTP/1.0\r\n\r\n'
@@ -128,6 +127,8 @@ class tcp_hdr(object):
         self.seq_num = num
     def update_acknum(self, num):
         self.ack_num = num
+    def update_checksum(self):
+        self.checksum = str(ip_cksum(self.get_hdr()))
 
 """
 class: ip_hdr
@@ -135,25 +136,26 @@ len: 20 bytes
 """
 class ip_hdr(object):
     def __init__(self): 
-        self.version = '' #4 bits
+        self.version = '45' #4 bits
         self.ihl = '' #4 bits
-        self.tos = '' #8 bits
-        self.len = '' #16 bits
-        self.id = ''#16 bits
-        self.flags = '' #3 bits
-        self.offset = '' #13 bits
-        self.ttl = '' #8 bits
-        self.protocol = '' #8 bits
-        self.checksum = '' #16 bits
-        self.src_addr = '' #32 bits
-        self.dst_addr = '' #32 bits
+        self.tos = '00' #8 bits
+        self.len = '00 28' #16 bits
+        self.id = '00 01'#16 bits
+        self.flags = '00' #3 bits
+        self.offset = '00' #13 bits
+        self.ttl = '40' #8 bits
+        self.protocol = '06' #8 bits
+        self.checksum = '6c 9b' #16 bits
+        self.src_addr = my_network('001107800') #32 bits
+        self.dst_addr = '0a 00 00 01' #32 bits
 
     def get_hdr(self):
-        return self.version + self.ihl + self.tos + self.len + self.id + \
+        result = self.version + self.ihl + self.tos + self.len + self.id + \
         self.flags + self.offset + self.ttl + self.protocol + self.checksum + self.src_addr + self.dst_addr    
-
+        return result.replace(' ','')
+    
     def update_checksum(self): 
-        self.checksum = ip_cksum(self)
+        self.checksum = str(ip_cksum(self.get_hdr()))
 
 
 """
@@ -163,12 +165,12 @@ len: 14 bytes
 class eth_hdr(object):
     def __init__(self):
         self.preamble = '' #8 bits
-        self.dst = '' #6 bits
-        self.src = '' #6 bits
-        self.type = '' #2 bits
+        self.dst = '02 00 00 00 00 01' #6 bits
+        self.src = '02 00 01 10 78 00' #6 bits
+        self.type = '08 00' #2 bits
     def get_hdr(self):
-        return self.preamble + self.dst + self.src + self.type
-
+        result = self.preamble + self.dst + self.src + self.type
+        return result.replace(' ','')
 
 """
 Internet checksum
@@ -213,20 +215,36 @@ def main():
     eth_hdr0 = eth_hdr()
     ip_hdr0 = ip_hdr()
     tcp_hdr0 = tcp_hdr()
+    print ip_hdr0.src_addr
+    print len(binascii.unhexlify(eth_hdr0.get_hdr()))
+    print len(binascii.unhexlify(ip_hdr0.get_hdr()))
+    print len(binascii.unhexlify(tcp_hdr0.get_hdr()))
     raw_pkt = eth_hdr0.get_hdr() + ip_hdr0.get_hdr() + tcp_hdr0.get_hdr()
+    #print raw_pkt
+    #print str(ip_hdr0.checksum)
+    #print str(tcp_hdr0.checksum)
+    raw_pkt = raw_pkt.replace(' ','')
     pkt = binascii.unhexlify(raw_pkt)
-    pkt_len = len(pkt)
-    print eth_hdr0.get_hdr() + ip_hdr0.get_hdr() + tcp_hdr0.get_hdr()    
-
+    pkt_len = struct.pack("!H",len(pkt))    
+    print len(pkt_len)
+    print len(pkt)
     print "sending GET..."
-    s.send(struct.pack("!H",pkt_len) + pkt, 0)
+"""
+thing = "000000000000000000000000000000284500002800010000400610d50aaa55500a000001bb9300502d7bd6060000000050020578810a0000"
+    thing2 = binascii.unhexlify(thing)
+    thing_len = len(thing2)
+    print thing
+    print raw_pkt
+    s.send(struct.pack("!H", thing_len) + thing2, 0)
+"""    
+    s.send(pkt_len + pkt, 0)
     print "receiving..."
     
     while True:
-        resp = s.recv(2)
+        resp = s.recv(56)
         if resp == "": break
-        print tmp
-        print len(tmp)
+        print binascii.hexlify(resp)
+        print len(resp)
     s.close()
     print "\done"
     

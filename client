@@ -109,7 +109,7 @@ class tcp_hdr(object):
         self.reserved = '' #6 bits 
         self.flag = '02' #6 bits #SYN
         self.window = '05 78' #16 bits
-        self.checksum = '27 2d' #16 bits
+        self.checksum = '00 00' #16 bits
         self.urgent = '00 00' #16 bits
         self.options = '' #0 or 32 bits
         #self.data = "" #'GET / HTTP/1.0\r\n\r\n'
@@ -126,8 +126,32 @@ class tcp_hdr(object):
         self.seq_num = num
     def update_acknum(self, num):
         self.ack_num = num
-    def update_checksum(self):
-        self.checksum = str(ip_cksum(self.get_hdr()))
+    def update_checksum(self, num):
+        self.checksum = str(num)
+
+
+#H H I I B B H H H
+#12345, 80, 0, 0, 0x50, 2, 1800
+#B B H H H B B H I I
+# 0x45, 0, 20 + eln, 1, 0, 40, 6, 0, srcaddr, dstaddr
+
+
+
+"""
+class: pseduo header
+"""
+class p_hdr(object):
+    def __init__(self):
+        self.src = my_network('001107800')
+        self.dst = '0a 00 00 01'
+        self.type = '00 06'
+        self.len = '00 14'
+    def get_hdr(self):
+        result = self.src + self.dst + self.type + self.len
+        return result.replace(' ','')
+    def update_len(self, num):
+        self.len = str(num)
+
 
 """
 class: ip_hdr
@@ -144,7 +168,7 @@ class ip_hdr(object):
         self.offset = '00' #13 bits
         self.ttl = '40' #8 bits
         self.protocol = '06' #8 bits
-        self.checksum = '18 61' #16 bits
+        self.checksum = '00 00' #16 bits
         self.src_addr = my_network('001107800') #32 bits
         self.dst_addr = '0a 00 00 01' #32 bits
 
@@ -153,8 +177,8 @@ class ip_hdr(object):
         self.flags + self.offset + self.ttl + self.protocol + self.checksum + self.src_addr + self.dst_addr    
         return result.replace(' ','')
     
-    def update_checksum(self): 
-        self.checksum = str(ip_cksum(self.get_hdr()))
+    def update_checksum(self, num): 
+        self.checksum = str(num)
 
 
 """
@@ -221,9 +245,23 @@ def main():
     # Construct headers  
     eth_hdr0 = eth_hdr()
     ip_hdr0 = ip_hdr()
-    tcp_hdr0 = tcp_hdr() 
-    
-    print ip_cksum(ip_hdr0.get_hdr())
+    tcp_hdr0 = tcp_hdr()
+    p_hdr0 = p_hdr()
+
+
+    tcp_cksum = str(p_hdr0.get_hdr() + tcp_hdr0.get_hdr()).replace('0x','')
+    tcp_cksum = binascii.unhexlify(tcp_cksum)
+    tcp_cksum = ip_cksum(tcp_cksum)
+    tcp_cksum = str(hex(tcp_cksum)).replace('0x','')
+
+    ip_checksum = binascii.unhexlify(ip_hdr0.get_hdr())
+    ip_checksum = str(hex(ip_cksum(ip_checksum))).replace('0x','')
+
+
+    tcp_hdr0.update_checksum(tcp_cksum)
+    ip_hdr0.update_checksum(ip_checksum)
+
+
 
     # Concatenate headers
     raw_pkt = eth_hdr0.get_hdr() + ip_hdr0.get_hdr() + tcp_hdr0.get_hdr()
@@ -233,9 +271,6 @@ def main():
     pkt = binascii.unhexlify(raw_pkt)
     pkt_len = struct.pack("!H",len(pkt))    
 
-    print len(pkt_len)
-    print raw_pkt
-    print len(pkt)
     print "sending GET..."
      
     s.send(pkt_len + pkt, 0)

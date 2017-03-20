@@ -112,22 +112,26 @@ class tcp_hdr(object):
         self.checksum = '00 00' #16 bits
         self.urgent = '00 00' #16 bits
         self.options = '' #0 or 32 bits
-        #self.data = "" #'GET / HTTP/1.0\r\n\r\n'
+        self.data = "" #'GET / HTTP/1.0\r\n\r\n'
 
     def get_hdr(self):
         result = (self.src_port + self.dst_port + self.seq + self.ack + \
                  self.len + self.reserved + self.flag + self.window + 
-                 self.checksum + self.urgent + self.options)
+                 self.checksum + self.urgent + self.options + self.data)
         return result.replace(' ','')
 
     def update_flags(self, flag):
         self.flag = flag
     def update_seqnum(self, num):
-        self.seq_num = num
+        self.seq = num
     def update_acknum(self, num):
-        self.ack_num = num
-    def update_checksum(self, num):
-        self.checksum = str(num)
+        self.ack = num
+    def update_checksum(self, string):
+        self.checksum = ip_cksum(string)
+    def set_GET(self):
+        self.data = 'GET / HTTP/1.0\r\n\r\n'
+    def reset_checksum(self):
+        self.checksum = '00 00'
 
 
 #H H I I B B H H H
@@ -149,8 +153,8 @@ class p_hdr(object):
     def get_hdr(self):
         result = self.src + self.dst + self.type + self.len
         return result.replace(' ','')
-    def update_len(self, num):
-        self.len = str(num)
+    def update_len(self, string1):
+        self.len = string1 
 
 
 """
@@ -176,10 +180,13 @@ class ip_hdr(object):
         result = self.version + self.ihl + self.tos + self.len + self.id + \
         self.flags + self.offset + self.ttl + self.protocol + self.checksum + self.src_addr + self.dst_addr    
         return result.replace(' ','')
+    def update_checksum(self, string):
+        self.checksum = ip_cksum(string)
+    def update_len(self, string):
+        self.len = string
+    def reset_checksum(self):
+        self.checksum = '00 00'
     
-    def update_checksum(self, num): 
-        self.checksum = str(num)
-
 
 """
 class: eth_hdr
@@ -208,10 +215,38 @@ def ip_cksum(pkt):
         sum += struct.unpack_from("!H", pkt, offset=i)[0]
     while (sum > 0xffff):
         sum = (sum & 0xffff) + (sum >> 16)
-    return sum ^ 0xffff
+    result = sum ^ 0xffff
+    return str(hex(result)).replace('0x','')
 
 
 
+
+def expand_pkt(s):
+    print "Ethernet: "
+    print "  dst addr: " + str(s[0:12])
+    print "  src addr: " + str(s[12:24])
+    print "  type: " + str(s[24:28])
+    print "IP: "
+    print "  version, tos: " + str(s[28:32])
+    print "  len: " + str(s[32:36])
+    print "  id: " + str(s[36:40])
+    print "  flags, offset: " + str(s[40:44])
+    print "  ttl: " + str(s[44:46])
+    print "  protocol: " + str(s[46:48])
+    print "  checksum: " + str(s[48:52])
+    print "  src: " + str(s[52:60])
+    print "  dst: " + str(s[60:68])
+    print "TCP: "
+    print "  src port: " + str(s[68:72])
+    print "  dst port: " + str(s[72:76])
+    print "  seq num: " + str(s[76:84])
+    print "  ack num: " + str(s[84:92])
+    print "  hdr len: " + str(s[92:94])
+    print "  flags: " + str(s[94:96])
+    print "  window: " + str(s[96:100])
+    print "  checksum: " + str(s[100:104])
+    print "  urgent: " + str(s[104:108])
+    print "  rest: " + str(len(s[108:]))
 
 
 """
@@ -240,7 +275,7 @@ def main():
  
 
     """
-    SYN/ACK section
+    SYN send section --------------------------------
     """
     # Construct headers  
     eth_hdr0 = eth_hdr()
@@ -248,53 +283,219 @@ def main():
     tcp_hdr0 = tcp_hdr()
     p_hdr0 = p_hdr()
 
-
-    tcp_cksum = str(p_hdr0.get_hdr() + tcp_hdr0.get_hdr()).replace('0x','')
-    tcp_cksum = binascii.unhexlify(tcp_cksum)
-    tcp_cksum = ip_cksum(tcp_cksum)
-    tcp_cksum = str(hex(tcp_cksum)).replace('0x','')
-
-    ip_checksum = binascii.unhexlify(ip_hdr0.get_hdr())
-    ip_checksum = str(hex(ip_cksum(ip_checksum))).replace('0x','')
-
-
-    tcp_hdr0.update_checksum(tcp_cksum)
-    ip_hdr0.update_checksum(ip_checksum)
-
-
+    # update checksums
+    arg1 = binascii.unhexlify(p_hdr0.get_hdr() + tcp_hdr0.get_hdr())
+    tcp_hdr0.update_checksum(arg1)
+    arg2 = binascii.unhexlify(ip_hdr0.get_hdr())
+    ip_hdr0.update_checksum(arg2)
 
     # Concatenate headers
-    raw_pkt = eth_hdr0.get_hdr() + ip_hdr0.get_hdr() + tcp_hdr0.get_hdr()
-    raw_pkt = raw_pkt.replace(' ','')
-    
+    raw_pkt = eth_hdr0.get_hdr() + ip_hdr0.get_hdr() + tcp_hdr0.get_hdr() 
+    print raw_pkt 
     # Format headers & Get length
     pkt = binascii.unhexlify(raw_pkt)
     pkt_len = struct.pack("!H",len(pkt))    
 
-    print "sending GET..."
+    print "sending SYN..."
      
     s.send(pkt_len + pkt, 0)
-    print "receiving..."
+
+    """
+    SYN/ACK receive section ----------------------------
+    """
+    # Receive packet
+    print "receiving SYN/ACK..."    
+    pkt = ''
+    tmp = s.recv(2,0)
+    n = struct.unpack('!H', tmp)[0]
+    while len(pkt) < n:
+        pkt += s.recv(n - len(pkt), 0)
+    resp = pkt
+
+    print binascii.hexlify(resp)
+    print len(resp)
+
+    (remote_seq, rcvd_ack, flags) = struct.unpack("!xxxxIIxBxxxxxx", resp[34:54])
+    #print hex(remote_seq)
+    #print hex(rcvd_ack)
+    #print hex(flags)
+ 
+
+    """
+    ACK send section ---------------------------------------
+    """
+    print "sending ACK..."
+    # update tcp seq_num
+    tcp_hdr0.update_seqnum('00 00 00 01')
+    # update tcp ack     
+    tcp_hdr0.update_acknum(str(hex(remote_seq + 1)).replace('0x','')) #seq+1
+    print str(hex(remote_seq + 1)).replace('0x','')
+    # update tcp flags
+    tcp_hdr0.update_flags('10') #'10' for ACK
+    # reset checksum
+    tcp_hdr0.reset_checksum()
+    # update tcp checksum
+    arg1 = binascii.unhexlify(p_hdr0.get_hdr() + tcp_hdr0.get_hdr())
+    tcp_hdr0.update_checksum(arg1)
+    print tcp_hdr0.checksum
+    raw_pkt = eth_hdr0.get_hdr() + ip_hdr0.get_hdr() + tcp_hdr0.get_hdr() 
+    pkt = binascii.unhexlify(raw_pkt)
+    pkt_len = struct.pack("!H", len(pkt))
+    print "sending ACK..."
+    s.send(pkt_len + pkt, 0)
+
+
+
+    """
+    GET send section -----------------------------------------
+    """
+
+    data = 'GET / HTTP/1.0\r\n\r\n'
+
+
+    # update pseudo header length
+    p_hdr0.update_len('00 26') #38
+    # reset checksum
+    tcp_hdr0.reset_checksum()    
+    # update tcp checksum
+    arg1 = binascii.unhexlify(p_hdr0.get_hdr() + tcp_hdr0.get_hdr())
+    arg1 += data 
+    tcp_hdr0.update_checksum(arg1)
     
-    while True:
-        resp = s.recv(60)
-        if resp == "": break
-        print binascii.hexlify(resp)
-        print len(resp)
+    # update ip length
+    ip_hdr0.update_len('00 3a')#58
+    # reset checksum
+    ip_hdr0.reset_checksum()
+    
+    # update ip checksum
+    arg1 = binascii.unhexlify(ip_hdr0.get_hdr())
+    ip_hdr0.update_checksum(arg1)
+    
+ 
+
+    raw_pkt = eth_hdr0.get_hdr() + ip_hdr0.get_hdr() + tcp_hdr0.get_hdr()
+    
+    pkt = binascii.unhexlify(raw_pkt)
+    pkt_len = struct.pack("!H", len(pkt)+len(data))
+    print "sending GET..."
+    s.send(pkt_len + pkt + data, 0)
+    
+    """
+    ACK receive section --------------------------------------
+    """
+    print "receiving ACK..."
+    pkt = ''
+    tmp = s.recv(2,0)
+    n = struct.unpack("!H", tmp)[0]
+    while len(pkt) < n:
+        pkt += s.recv(n - len(pkt),0)
+    print binascii.hexlify(pkt)
+    print len(pkt)
+   
+    #expand_pkt(binascii.hexlify(pkt))
+ 
+    """
+    (remote_seq, rcvd_ack, flags) = struct.unpack("!xxxxIIxBxxxxxx", pkt[34:54])
+    print hex(remote_seq)
+    print hex(rcvd_ack)
+    print hex(flags)
+    """
+
+    """
+    HTTP/OK section ------------------------------------------
+
+    """
+    print "receiving HTTP/OK data..."
+    pkt = ''
+    tmp = s.recv(2,0)
+    n = struct.unpack("!H", tmp)[0]
+    print n
+    while len(pkt) < n:
+        pkt += s.recv(n - len(pkt), 0)
+    print binascii.hexlify(pkt)
+    print len(pkt)    
+
+    #expand_pkt(binascii.hexlify(pkt))
+
+
+    """
+    send ACK section ---------------------------------------
+    """ 
+    print "sending ACK..."
+    (remote_seq, rcvd_ack, flags) = struct.unpack("!xxxxIIxBxxxxxx",pkt[34:54])
+
+    p_hdr1 = p_hdr()
+    ip_hdr1 = ip_hdr()
+    tcp_hdr1 = tcp_hdr()
+    eth_hdr1 = eth_hdr()
+    
+    #expand_pkt(eth_hdr1.get_hdr() + ip_hdr1.get_hdr() + tcp_hdr1.get_hdr())
+
+    ip_hdr1.update_len('00 28')
+    p_hdr1.update_len('00 14')
+    
+    tcp_hdr1.update_seqnum('00 00 00 13')
+    
+    
+    tcp_hdr1.update_acknum('00 00 01 a7')
+    tcp_hdr1.update_flags('10')
+    tcp_hdr1.reset_checksum()
+
+    arg1 = binascii.unhexlify(p_hdr1.get_hdr() + tcp_hdr1.get_hdr())
+    tcp_hdr1.update_checksum(arg1)
+    #print tcp_hdr0.checksum
+    raw_pkt = eth_hdr1.get_hdr() + ip_hdr1.get_hdr() + tcp_hdr1.get_hdr()
+
+    expand_pkt(raw_pkt)
+
+    pkt = binascii.unhexlify(raw_pkt)
+    pkt_len = struct.pack("!H", len(pkt))    
+    s.send(pkt_len + pkt, 0)
+
+
+
+    """
+    FIN/ACK receive section ---------------------------------
+    """
+    print "receiving FIN/ACK..."
+    pkt = ''
+    tmp = s.recv(2,0)
+    n = struct.unpack("!H", tmp)[0]
+    while len(pkt) < n:
+        pkt += s.recv(n - len(pkt), 0)
+    print binascii.hexlify(pkt)
+    print len(pkt)
+
+    expand_pkt(binascii.hexlify(pkt))
+
+    """
+    send ACK section ------------------------------------
+    """
+    print "sending ACK..."
+    (remote_seq, rcvd_ack, flags) = struct.unpack("!xxxxIIxBxxxxxx", pkt[34:54])
+    
+    eth_hdr2 = eth_hdr()
+    ip_hdr2 = ip_hdr()
+    tcp_hdr2 = tcp_hdr()
+    p_hdr2 = p_hdr()
+
+    tcp_hdr2.update_seqnum('00 00 00 14')
+    tcp_hdr2.update_acknum(str(hex(remote_seq + 1)).replace('0x',''))
+    tcp_hdr2.update_flags('10')
+    tcp_hdr2.reset_checksum()
+    
+    arg1 = binascii.unhexlify(p_hdr2.get_hdr() + tcp_hdr2.get_hdr())
+    tcp_hdr2.update_checksum(arg1)
+    raw_pkt = eth_hdr2.get_hdr() + ip_hdr2.get_hdr() + tcp_hdr2.get_hdr()
+ 
+    expand_pkt(binascii.hexlify(raw_pkt))
+
+    pkt = binascii.unhexlify(raw_pkt)
+    pkt_len = struct.pack("!H",len(pkt))
+    s.send(pkt_len + pkt, 0)
+
     s.close()
     print "\done"
-    
-    # Raw TCP socket connection
-        #TODO: Create TCP connection with SOCK.RAW, SOCK.IPROTO_RAW
-        #TODO: Create IP packet by wrapping a TCP packet
-        #TODO: Create functions to increment values in IP packet
-        
-        # TODO:
-        # 1. while-loop until receive the FIN flag
-        # 2. ACK the FIN flag
-        # 3. wait for final ACK
-        # 4. exit()
-    
 
 
 if __name__ == "__main__":
